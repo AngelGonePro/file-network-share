@@ -1,9 +1,11 @@
+https://raw.githubusercontent.com/AngelGonePro/file-network-share/refs/heads/main/network-share.zip
+
 ```
-rm -rf ~/cloud-frps && \
-mkdir -p ~/cloud-frps && \
-wget -q -O /tmp/cloud-frps.zip https://raw.githubusercontent.com/AngelGonePro/frp-docker/refs/heads/main/cloud-frps.zip && \
-unzip -q /tmp/cloud-frps.zip -d ~ && \
-rm /tmp/cloud-frps.zip && \
-cd ~/cloud-frps && \
+rm -rf ~/network-share && \
+mkdir -p ~/network-share && \
+wget -q -O /tmp/network-share.zip https://raw.githubusercontent.com/AngelGonePro/file-network-share/refs/heads/main/network-share.zip && \
+unzip -q /tmp/network-share.zip -d ~ && \
+rm /tmp/network-share.zip && \
+cd ~/network-share && \
 ls -la
 ```
