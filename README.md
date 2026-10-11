@@ -20,7 +20,6 @@ nano .env      # set NC_TRUSTED_PROXIES to your proxy VM's IP, set NC_PORT
 docker compose up -d --build
 ```
 
-
 # Network Share (Samba) — Deployment Runbook
 
 A performant SMB share, built for feeding video to Jellyfin over the network and
@@ -134,8 +133,14 @@ mount -t cifs //<SHARE-HOST-IP>/NetworkShare /mnt/network-share \
   -o credentials=/root/.network-share-credentials,iocharset=utf8,vers=3.0,cache=loose,rsize=1048576,wsize=1048576,actimeo=30,noperm
 ```
 ```bash
-echo "//<SHARE-HOST-IP>/NetworkShare /mnt/network-share cifs credentials=/root/.network-share-credentials,iocharset=utf8,vers=3.0,cache=loose,rsize=1048576,wsize=1048576,actimeo=30,noperm,_netdev 0 0" >> /etc/fstab
+echo "//<SHARE-HOST-IP>/NetworkShare /mnt/network-share cifs credentials=/root/.network-share-credentials,iocharset=utf8,vers=3.0,cache=loose,rsize=1048576,wsize=1048576,actimeo=30,noperm,nofail,x-systemd.mount-timeout=30,_netdev 0 0" >> /etc/fstab
 ```
+```bash
+systemctl daemon-reload
+```
+
+`nofail` + `x-systemd.mount-timeout=30` keep the host booting normally if the
+share machine is down or slow, instead of hanging or dropping to emergency mode.
 
 `rsize`/`wsize` at 1MB + `cache=loose` are what actually prevent stutter on
 large sequential video reads — not raw bandwidth tuning.
@@ -154,6 +159,40 @@ changed on the host afterward:
 ```bash
 docker compose up -d --force-recreate <service-name>
 ```
+
+Add `:rslave` to the end of the volume line so a mount that appears or is
+re-done on the host later (slow boot, share machine restarted) shows up inside
+the container instead of leaving it stuck on an empty folder:
+```
+- /mnt/network-share:/data/network-share:rslave
+```
+
+### Surviving reboots (run on the host that mounts the share)
+Without this, Docker can start containers before the CIFS mount is up (very
+likely if both machines restart together after a power cut). Containers then
+bind an empty folder, and Jellyfin can read that as "all media deleted" on its
+next scan. Make Docker start only after the network mounts have been attempted:
+```bash
+mkdir -p /etc/systemd/system/docker.service.d
+cat > /etc/systemd/system/docker.service.d/wait-for-share.conf << 'EOF'
+[Unit]
+After=remote-fs.target
+EOF
+systemctl daemon-reload
+```
+Verify with a real test, not by inspection: reboot the share machine, wait for
+it, reboot the mounting host, then check:
+```bash
+mount | grep network-share
+docker exec <container> ls <container-mount-path>
+```
+Also test the bad order: boot the mounting host while the share machine is off,
+bring the share machine up, run `mount -a`, and confirm the container sees the
+files without being recreated (this is what `:rslave` is for).
+
+Share machine side needs nothing extra: the Samba container uses
+`restart: unless-stopped`, and the folder ownership, ACLs and fstab bind mounts
+are all on disk. Just confirm `systemctl is-enabled docker` prints `enabled`.
 
 If the target container runs with `read_only: true`, Docker can't create a new
 mountpoint directory inside its read-only rootfs. Mount under a path that's
